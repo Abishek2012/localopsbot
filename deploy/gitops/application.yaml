@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: localopsbot
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/Abishek2012/localopsbot.git
+    targetRevision: main
+    path: helm/localopsbot
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: localopsbot
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
