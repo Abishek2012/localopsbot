@@ -7,13 +7,14 @@ from app.core.config import settings
 
 
 QUEUE_NAME = "chatbot:jobs"
+FAILURE_MODE_KEY = "chatbot:failure_mode"
 
 
 def get_redis_client():
     return redis.Redis(
         host=settings.redis_host,
         port=settings.redis_port,
-        decode_responses=True
+        decode_responses=True,
     )
 
 
@@ -24,7 +25,6 @@ class QueueService:
 
     def connect(self):
         self.client = get_redis_client()
-
         self.client.ping()
 
     def enqueue(self, job: dict):
@@ -33,7 +33,7 @@ class QueueService:
 
         self.client.rpush(
             QUEUE_NAME,
-            json.dumps(job)
+            json.dumps(job),
         )
 
     def dequeue(self, timeout: int = 1):
@@ -42,7 +42,7 @@ class QueueService:
 
         result = self.client.blpop(
             QUEUE_NAME,
-            timeout=timeout
+            timeout=timeout,
         )
 
         if result is None:
@@ -57,6 +57,25 @@ class QueueService:
             self.connect()
 
         return self.client.llen(QUEUE_NAME)
+
+    def set_failure_mode(self, mode: str):
+        if self.client is None:
+            self.connect()
+
+        self.client.set(
+            FAILURE_MODE_KEY,
+            mode,
+        )
+
+    def get_failure_mode(self) -> str:
+        if self.client is None:
+            self.connect()
+
+        mode = self.client.get(
+            FAILURE_MODE_KEY
+        )
+
+        return mode or "success"
 
     def is_healthy(self) -> bool:
         try:
@@ -76,7 +95,7 @@ def create_job(
     job_id: str,
     conversation_id: str,
     message: str,
-    request_id: str
+    request_id: str,
 ) -> dict:
 
     return {
@@ -86,5 +105,5 @@ def create_job(
         "request_id": request_id,
         "created_at": datetime.now(
             timezone.utc
-        ).isoformat()
+        ).isoformat(),
     }

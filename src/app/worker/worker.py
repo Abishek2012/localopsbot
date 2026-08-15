@@ -7,7 +7,7 @@ from app.core.database import (
     create_job,
     initialize_database,
     move_to_dead_letter,
-    update_job_status
+    update_job_status,
 )
 from app.core.logging import logger
 from app.core.metrics import (
@@ -15,20 +15,20 @@ from app.core.metrics import (
     JOB_RETRIES_TOTAL,
     JOBS_TOTAL,
     PROCESSING_DURATION,
-    QUEUE_DEPTH
+    QUEUE_DEPTH,
 )
 from app.core.retry import (
     calculate_backoff,
-    is_retryable
+    is_retryable,
 )
 from app.services.mock_llm import (
     LLMError,
-    mock_llm_service
+    mock_llm_service,
 )
 from app.services.queue import queue_service
 from app.services.retrieval import (
     RetrievalError,
-    retrieval_service
+    retrieval_service,
 )
 
 
@@ -37,16 +37,48 @@ current_job = None
 
 
 def handle_shutdown(signum, frame):
+
     global running
 
     logger.info(
-        "Shutdown signal received. Stopping worker."
+        "Shutdown signal received. "
+        "Stopping worker."
     )
 
     running = False
 
 
+def apply_failure_mode():
+
+    mode = (
+        queue_service.get_failure_mode()
+    )
+
+    if mode == "retrieval_error":
+
+        retrieval_service.set_failure_mode(
+            "retrieval_error"
+        )
+
+        mock_llm_service.set_failure_mode(
+            "success"
+        )
+
+    else:
+
+        retrieval_service.set_failure_mode(
+            "success"
+        )
+
+        mock_llm_service.set_failure_mode(
+            mode
+        )
+
+    return mode
+
+
 def process_job(job: dict):
+
     start_time = time.monotonic()
 
     retry_count = 0
@@ -58,23 +90,29 @@ def process_job(job: dict):
         "Processing job",
         extra={
             "job_id": job_id,
-            "conversation_id": job["conversation_id"],
-            "retry_count": retry_count
-        }
+            "conversation_id": (
+                job["conversation_id"]
+            ),
+            "retry_count": retry_count,
+        },
     )
 
     create_job(job)
 
-    while retry_count <= settings.max_retries:
+    while (
+        retry_count
+        <= settings.max_retries
+    ):
 
         attempt_start = time.monotonic()
 
         try:
+
             update_job_status(
                 job_id,
                 status="processing",
                 retry_count=retry_count,
-                retry_history=retry_history
+                retry_history=retry_history,
             )
 
             elapsed = (
@@ -82,19 +120,39 @@ def process_job(job: dict):
                 - start_time
             )
 
-            if elapsed > settings.max_processing_time_seconds:
+            if (
+                elapsed
+                > settings.max_processing_time_seconds
+            ):
+
                 raise LLMError(
                     "Maximum processing time exceeded",
-                    "timeout"
+                    "timeout",
                 )
 
-            context = retrieval_service.retrieve(
-                job["message"]
+            # Read the shared failure mode from Redis.
+            # This is the key fix for API/worker containers.
+            failure_mode = apply_failure_mode()
+
+            logger.info(
+                "Applying failure mode",
+                extra={
+                    "job_id": job_id,
+                    "failure_mode": failure_mode,
+                },
             )
 
-            result = mock_llm_service.generate(
-                job["message"],
-                context
+            context = (
+                retrieval_service.retrieve(
+                    job["message"]
+                )
+            )
+
+            result = (
+                mock_llm_service.generate(
+                    job["message"],
+                    context,
+                )
             )
 
             duration = (
@@ -107,7 +165,7 @@ def process_job(job: dict):
                 status="completed",
                 retry_count=retry_count,
                 retry_history=retry_history,
-                response=result["response"]
+                response=result["response"],
             )
 
             JOBS_TOTAL.labels(
@@ -126,31 +184,40 @@ def process_job(job: dict):
                         job["conversation_id"]
                     ),
                     "retry_count": retry_count,
-                    "processing_duration": duration
-                }
+                    "processing_duration": duration,
+                },
             )
 
             return
 
-        except (LLMError, RetrievalError) as exc:
+        except (
+            LLMError,
+            RetrievalError,
+        ) as exc:
 
             error_category = getattr(
                 exc,
                 "category",
-                "unknown"
+                "unknown",
             )
 
             retry_history.append({
-                "attempt": retry_count + 1,
-                "timestamp": datetime.now(
-                    timezone.utc
-                ).isoformat(),
-                "error_category": error_category,
+                "attempt": (
+                    retry_count + 1
+                ),
+                "timestamp": (
+                    datetime.now(
+                        timezone.utc
+                    ).isoformat()
+                ),
+                "error_category": (
+                    error_category
+                ),
                 "error": str(exc),
                 "duration": (
                     time.monotonic()
                     - attempt_start
-                )
+                ),
             })
 
             retryable = is_retryable(
@@ -159,20 +226,22 @@ def process_job(job: dict):
 
             if (
                 not retryable
-                or retry_count >= settings.max_retries
+                or retry_count
+                >= settings.max_retries
             ):
+
                 update_job_status(
                     job_id,
                     status="dead_lettered",
                     retry_count=retry_count,
                     failure_reason=str(exc),
-                    retry_history=retry_history
+                    retry_history=retry_history,
                 )
 
                 move_to_dead_letter(
                     job,
                     str(exc),
-                    retry_history
+                    retry_history,
                 )
 
                 JOBS_TOTAL.labels(
@@ -188,11 +257,13 @@ def process_job(job: dict):
                         "conversation_id": (
                             job["conversation_id"]
                         ),
-                        "retry_count": retry_count,
+                        "retry_count": (
+                            retry_count
+                        ),
                         "error_category": (
                             error_category
-                        )
-                    }
+                        ),
+                    },
                 )
 
                 return
@@ -200,16 +271,21 @@ def process_job(job: dict):
             delay = calculate_backoff(
                 retry_count,
                 settings.retry_base_delay,
-                settings.retry_max_delay
+                settings.retry_max_delay,
             )
 
             JOB_RETRIES_TOTAL.labels(
                 dependency=(
                     "llm"
-                    if isinstance(exc, LLMError)
+                    if isinstance(
+                        exc,
+                        LLMError,
+                    )
                     else "retrieval"
                 ),
-                error_category=error_category
+                error_category=(
+                    error_category
+                ),
             ).inc()
 
             JOBS_TOTAL.labels(
@@ -223,11 +299,14 @@ def process_job(job: dict):
                     "conversation_id": (
                         job["conversation_id"]
                     ),
-                    "retry_count": retry_count,
+                    "retry_count": (
+                        retry_count
+                    ),
                     "error_category": (
                         error_category
-                    )
-                }
+                    ),
+                    "retry_delay": delay,
+                },
             )
 
             retry_count += 1
@@ -237,12 +316,18 @@ def process_job(job: dict):
         except Exception as exc:
 
             retry_history.append({
-                "attempt": retry_count + 1,
-                "timestamp": datetime.now(
-                    timezone.utc
-                ).isoformat(),
-                "error_category": "unexpected_error",
-                "error": str(exc)
+                "attempt": (
+                    retry_count + 1
+                ),
+                "timestamp": (
+                    datetime.now(
+                        timezone.utc
+                    ).isoformat()
+                ),
+                "error_category": (
+                    "unexpected_error"
+                ),
+                "error": str(exc),
             })
 
             update_job_status(
@@ -250,13 +335,13 @@ def process_job(job: dict):
                 status="dead_lettered",
                 retry_count=retry_count,
                 failure_reason=str(exc),
-                retry_history=retry_history
+                retry_history=retry_history,
             )
 
             move_to_dead_letter(
                 job,
                 str(exc),
-                retry_history
+                retry_history,
             )
 
             JOBS_TOTAL.labels(
@@ -268,24 +353,25 @@ def process_job(job: dict):
             logger.exception(
                 "Unexpected job failure",
                 extra={
-                    "job_id": job_id
-                }
+                    "job_id": job_id,
+                },
             )
 
             return
 
 
 def run_worker():
+
     global current_job
 
     signal.signal(
         signal.SIGTERM,
-        handle_shutdown
+        handle_shutdown,
     )
 
     signal.signal(
         signal.SIGINT,
-        handle_shutdown
+        handle_shutdown,
     )
 
     initialize_database()
@@ -301,6 +387,7 @@ def run_worker():
     while running:
 
         try:
+
             QUEUE_DEPTH.set(
                 queue_service.get_depth()
             )
@@ -342,6 +429,7 @@ def run_worker():
                 < settings.shutdown_timeout_seconds
             )
         ):
+
             time.sleep(0.1)
 
     logger.info(

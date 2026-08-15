@@ -72,8 +72,13 @@ async def chat(request: ChatRequest):
         )
 
 
-@router.post("/action", response_model=ActionResponse)
-async def execute_action(request: ActionRequest):
+@router.post(
+    "/action",
+    response_model=ActionResponse,
+)
+async def execute_action(
+    request: ActionRequest,
+):
 
     if request.action_type != "create_ticket":
 
@@ -84,24 +89,27 @@ async def execute_action(request: ActionRequest):
 
     try:
 
-        result = action_service.execute_create_ticket(
-            title=request.title,
-            description=request.description,
-            idempotency_key=request.idempotency_key,
-            simulate_ambiguous_timeout=(
-                request.simulate_ambiguous_timeout
-            ),
+        result = (
+            action_service.execute_create_ticket(
+                title=request.title,
+                description=request.description,
+                idempotency_key=(
+                    request.idempotency_key
+                ),
+                simulate_ambiguous_timeout=(
+                    request.simulate_ambiguous_timeout
+                ),
+            )
         )
 
         return ActionResponse(**result)
 
     except AmbiguousActionTimeout:
 
-        # Do NOT blindly retry.
-        # Query durable action state using the
-        # idempotency key.
-        result = action_service.resolve_ambiguous_timeout(
-            request.idempotency_key
+        result = (
+            action_service.resolve_ambiguous_timeout(
+                request.idempotency_key
+            )
         )
 
         return ActionResponse(**result)
@@ -119,8 +127,36 @@ async def set_failure_mode(
     request: FailureModeRequest,
 ):
 
+    valid_modes = {
+        "success",
+        "slow",
+        "timeout",
+        "rate_limited",
+        "server_error",
+        "malformed_response",
+        "retrieval_error",
+    }
+
+    if request.mode not in valid_modes:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid failure mode: "
+                f"{request.mode}"
+            ),
+        )
+
     try:
 
+        # Store centrally in Redis.
+        # Both API and Worker containers
+        # will read the same failure mode.
+        queue_service.set_failure_mode(
+            request.mode
+        )
+
+        # Update local API instances too.
         if request.mode == "retrieval_error":
 
             retrieval_service.set_failure_mode(
@@ -146,18 +182,23 @@ async def set_failure_mode(
             "failure_mode": request.mode,
         }
 
-    except ValueError as exc:
+    except Exception as exc:
 
         raise HTTPException(
-            status_code=400,
-            detail=str(exc),
+            status_code=503,
+            detail=(
+                f"Unable to update failure mode: "
+                f"{str(exc)}"
+            ),
         )
 
 
 @router.get("/readyz")
 async def readyz():
 
-    redis_ready = queue_service.is_healthy()
+    redis_ready = (
+        queue_service.is_healthy()
+    )
 
     if not redis_ready:
 
