@@ -2,17 +2,19 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 
+from app.core.database import get_job
 from app.core.metrics import CHAT_REQUESTS_TOTAL
 from app.models.schemas import (
     ChatRequest,
     ChatResponse,
-    FailureModeRequest
+    FailureModeRequest,
 )
 from app.services.mock_llm import mock_llm_service
 from app.services.queue import (
     create_job,
-    queue_service
+    queue_service,
 )
+from app.services.retrieval import retrieval_service
 
 
 router = APIRouter()
@@ -20,7 +22,7 @@ router = APIRouter()
 
 @router.post(
     "/chat",
-    response_model=ChatResponse
+    response_model=ChatResponse,
 )
 async def chat(request: ChatRequest):
 
@@ -35,7 +37,7 @@ async def chat(request: ChatRequest):
         job_id=job_id,
         conversation_id=request.conversation_id,
         message=request.message,
-        request_id=request_id
+        request_id=request_id,
     )
 
     try:
@@ -48,7 +50,7 @@ async def chat(request: ChatRequest):
         return ChatResponse(
             request_id=request_id,
             job_id=job_id,
-            status="queued"
+            status="queued",
         )
 
     except Exception as exc:
@@ -59,31 +61,47 @@ async def chat(request: ChatRequest):
 
         raise HTTPException(
             status_code=503,
-            detail=f"Queue unavailable: {str(exc)}"
+            detail=f"Queue unavailable: {str(exc)}",
         )
 
 
 @router.post("/test/failure-mode")
 async def set_failure_mode(
-    request: FailureModeRequest
+    request: FailureModeRequest,
 ):
 
     try:
 
-        mock_llm_service.set_failure_mode(
-            request.mode
-        )
+        if request.mode == "retrieval_error":
+
+            retrieval_service.set_failure_mode(
+                "retrieval_error"
+            )
+
+            mock_llm_service.set_failure_mode(
+                "success"
+            )
+
+        else:
+
+            retrieval_service.set_failure_mode(
+                "success"
+            )
+
+            mock_llm_service.set_failure_mode(
+                request.mode
+            )
 
         return {
             "status": "updated",
-            "failure_mode": request.mode
+            "failure_mode": request.mode,
         }
 
     except ValueError as exc:
 
         raise HTTPException(
             status_code=400,
-            detail=str(exc)
+            detail=str(exc),
         )
 
 
@@ -98,23 +116,26 @@ async def readyz():
             status_code=503,
             detail={
                 "status": "not_ready",
-                "redis": "unavailable"
-            }
+                "redis": "unavailable",
+            },
         )
 
     return {
         "status": "ready",
-        "redis": "healthy"
+        "redis": "healthy",
     }
 
 
 @router.get("/jobs/{job_id}")
-async def get_job(job_id: str):
+async def get_job_status(job_id: str):
 
-    # Database lookup will be implemented
-    # with the worker in the next step.
+    job = get_job(job_id)
 
-    return {
-        "job_id": job_id,
-        "status": "pending_implementation"
-    }
+    if job is None:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found",
+        )
+
+    return job
