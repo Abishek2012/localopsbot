@@ -295,3 +295,21 @@ helm template localopsbot helm/localopsbot
 A full local Kubernetes cluster was not used for the final validation workflow. The Helm chart and Kubernetes resources were validated through Helm linting and manifest rendering.
 
 This validation approach verifies Helm syntax, template correctness, and the generated Kubernetes resources without requiring a local Kubernetes runtime.
+
+
+
+
+## Kubernetes Validation
+
+The Kubernetes deployment configuration was implemented using Helm and includes the application workloads, services, ConfigMap, Secret, health probes, resource configuration, HPA, and PodDisruptionBudget.
+
+The Helm chart was validated using:
+
+```bash
+helm lint helm/localopsbot
+helm template localopsbot helm/localopsbot
+```
+
+End-to-end validation against a running Kubernetes cluster was also attempted locally. Docker Desktop Kubernetes caused resource constraints on the development machine, so a lightweight `kind` cluster was attempted as an alternative. The `kind` control plane failed during bootstrap, after which the temporary cluster was cleaned up.
+
+Therefore, the submitted Kubernetes configuration has been validated through Helm linting and manifest rendering, but full runtime validation on a running Kubernetes cluster was not completed in the local environment.
