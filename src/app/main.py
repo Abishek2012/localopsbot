@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from prometheus_client import make_asgi_app
 
+from app.api.routes import router
 from app.core.config import settings
 from app.core.database import initialize_database
 
@@ -29,6 +30,9 @@ async def healthz():
     return {
         "status": "healthy"
     }
+
+
+app.include_router(router)
 
 
 metrics_app = make_asgi_app()
