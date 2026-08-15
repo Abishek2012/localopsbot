@@ -1,0 +1,22 @@
+[
+  {
+    "id": "access-reset",
+    "title": "Access Reset",
+    "content": "To reset access, submit an access reset request through the internal support portal. If access is urgently required, create a support ticket with the affected system name."
+  },
+  {
+    "id": "password-reset",
+    "title": "Password Reset",
+    "content": "Passwords can be reset using the self-service password portal. After three failed attempts, the account may be temporarily locked."
+  },
+  {
+    "id": "vpn-access",
+    "title": "VPN Access",
+    "content": "VPN access requires an active corporate account and approved network access. Connection failures should first be checked against the VPN service status."
+  },
+  {
+    "id": "ticket",
+    "title": "Support Ticket",
+    "content": "A support ticket should include a clear title, problem description, impacted service, and business impact."
+  }
+]
