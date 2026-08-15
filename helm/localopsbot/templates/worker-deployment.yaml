@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-worker
+  labels:
+    app: localopsbot
+    component: worker
+
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+
+  selector:
+    matchLabels:
+      app: localopsbot
+      component: worker
+
+  template:
+    metadata:
+      labels:
+        app: localopsbot
+        component: worker
+
+    spec:
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          command:
+            - python
+            - -m
+            - app.worker.worker
+
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-config
+
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}

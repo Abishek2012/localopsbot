@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+
+data:
+  APP_NAME: "LocalOpsBot"
+  ENVIRONMENT: "kubernetes"
+
+  REDIS_HOST: "{{ .Release.Name }}-redis"
+  REDIS_PORT: "6379"
+
+  DATABASE_PATH: "/app/data/localopsbot.db"
+
+  MAX_RETRIES: {{ .Values.config.maxRetries | quote }}
+  RETRY_BASE_DELAY: {{ .Values.config.retryBaseDelay | quote }}
+  RETRY_MAX_DELAY: {{ .Values.config.retryMaxDelay | quote }}
+
+  LLM_TIMEOUT_SECONDS: {{ .Values.config.llmTimeoutSeconds | quote }}
+  MAX_PROCESSING_TIME_SECONDS: {{ .Values.config.maxProcessingTimeSeconds | quote }}
+
+  SHUTDOWN_TIMEOUT_SECONDS: {{ .Values.config.shutdownTimeoutSeconds | quote }}
+  FAILURE_MODE: "success"

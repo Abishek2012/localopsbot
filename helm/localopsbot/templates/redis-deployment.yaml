@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels:
+    app: localopsbot
+    component: redis
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: localopsbot
+      component: redis
+
+  template:
+    metadata:
+      labels:
+        app: localopsbot
+        component: redis
+
+    spec:
+      containers:
+        - name: redis
+          image: {{ .Values.redis.image }}
+
+          args:
+            - redis-server
+            - --appendonly
+            - "yes"
+
+          ports:
+            - name: redis
+              containerPort: 6379
+
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}

@@ -1,0 +1,49 @@
+image:
+  repository: localopsbot
+  tag: latest
+  pullPolicy: IfNotPresent
+
+api:
+  replicaCount: 1
+
+  service:
+    type: ClusterIP
+    port: 8000
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+worker:
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+redis:
+  image: redis:7.4-alpine
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+config:
+  maxRetries: "3"
+  retryBaseDelay: "1"
+  retryMaxDelay: "10"
+  llmTimeoutSeconds: "3"
+  maxProcessingTimeSeconds: "30"
+  shutdownTimeoutSeconds: "20"
