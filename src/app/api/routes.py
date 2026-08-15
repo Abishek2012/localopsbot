@@ -5,9 +5,16 @@ from fastapi import APIRouter, HTTPException
 from app.core.database import get_job
 from app.core.metrics import CHAT_REQUESTS_TOTAL
 from app.models.schemas import (
+    ActionRequest,
+    ActionResponse,
     ChatRequest,
     ChatResponse,
     FailureModeRequest,
+)
+from app.services.action import (
+    AmbiguousActionTimeout,
+    ActionError,
+    action_service,
 )
 from app.services.mock_llm import mock_llm_service
 from app.services.queue import (
@@ -62,6 +69,48 @@ async def chat(request: ChatRequest):
         raise HTTPException(
             status_code=503,
             detail=f"Queue unavailable: {str(exc)}",
+        )
+
+
+@router.post("/action", response_model=ActionResponse)
+async def execute_action(request: ActionRequest):
+
+    if request.action_type != "create_ticket":
+
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported action type",
+        )
+
+    try:
+
+        result = action_service.execute_create_ticket(
+            title=request.title,
+            description=request.description,
+            idempotency_key=request.idempotency_key,
+            simulate_ambiguous_timeout=(
+                request.simulate_ambiguous_timeout
+            ),
+        )
+
+        return ActionResponse(**result)
+
+    except AmbiguousActionTimeout:
+
+        # Do NOT blindly retry.
+        # Query durable action state using the
+        # idempotency key.
+        result = action_service.resolve_ambiguous_timeout(
+            request.idempotency_key
+        )
+
+        return ActionResponse(**result)
+
+    except ActionError as exc:
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
         )
 
 
