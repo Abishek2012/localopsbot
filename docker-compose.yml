@@ -1,0 +1,141 @@
+services:
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: localopsbot-redis
+    restart: unless-stopped
+
+    command: >
+      redis-server
+      --save 60 1
+      --appendonly yes
+      --maxmemory 128mb
+      --maxmemory-policy noeviction
+
+    volumes:
+      - redis-data:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.50"
+
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: localopsbot-api
+
+    restart: unless-stopped
+
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+
+    ports:
+      - "8000:8000"
+
+    environment:
+      APP_NAME: LocalOpsBot
+      ENVIRONMENT: local
+
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
+      DATABASE_PATH: /app/data/localopsbot.db
+
+      MAX_RETRIES: 3
+      RETRY_BASE_DELAY: 1
+      RETRY_MAX_DELAY: 10
+
+      LLM_TIMEOUT_SECONDS: 3
+      MAX_PROCESSING_TIME_SECONDS: 30
+
+      SHUTDOWN_TIMEOUT_SECONDS: 20
+
+      FAILURE_MODE: success
+
+    volumes:
+      - app-data:/app/data
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\""
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.75"
+
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: localopsbot-worker
+
+    restart: unless-stopped
+
+    command: >
+      python -m app.worker.worker
+
+    environment:
+      APP_NAME: LocalOpsBot
+      ENVIRONMENT: local
+
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
+      DATABASE_PATH: /app/data/localopsbot.db
+
+      MAX_RETRIES: 3
+      RETRY_BASE_DELAY: 1
+      RETRY_MAX_DELAY: 10
+
+      LLM_TIMEOUT_SECONDS: 3
+      MAX_PROCESSING_TIME_SECONDS: 30
+
+      SHUTDOWN_TIMEOUT_SECONDS: 20
+
+      FAILURE_MODE: success
+
+    volumes:
+      - app-data:/app/data
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.75"
+
+
+volumes:
+  redis-data:
+  app-data:
