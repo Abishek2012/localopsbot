@@ -23,6 +23,11 @@ spec:
     spec:
       terminationGracePeriodSeconds: 30
 
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+
       containers:
         - name: worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -36,6 +41,19 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ .Release.Name }}-config
+
+          env:
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secret
+                  key: LLM_API_KEY
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
 
           resources:
             {{- toYaml .Values.worker.resources | nindent 12 }}
